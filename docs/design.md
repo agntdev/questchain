@@ -16,7 +16,7 @@ Telegram ⇄ grammY bot (long polling)
               ├─ cron job        (deadline reminders, season rollover)
               └─ PostgreSQL persistence
                    (users, challenges, evidence, sessions, competitions,
-                    teams, reputation, reminders)
+                    teams, reputation_log, user_balances, reminders)
 ```
 
 - **Runtime**: single Node.js process, grammY, long polling (no inbound
@@ -35,14 +35,15 @@ Telegram ⇄ grammY bot (long polling)
 
 | Entity | Table | Fields |
 | --- | --- | --- |
-| **User** | `users` | `telegram_id` PK, `name`, `reputation_score` (default 100), `crypto_balance` (default 0), `created_at` |
-| **Challenge** | `challenges` | `id` PK, `creator_telegram_id` FK→users, `title`, `description`, `reward_type` (`points`/`crypto`), `reward_amount`, `duration_days`, `verifier_count` (default 1), `status` (`active`/`completed`/`failed`/`cancelled`), `created_at`, `deadline`, `recurrence` (`none`/`weekly`/`monthly`) |
-| **VerificationEvidence** | `evidence` | `id` PK, `challenge_id` FK→challenges, `user_telegram_id` FK→users, `kind` (`photo`/`document`/`text`), `media_url`, `text_body`, `timestamp`, `verdict` (`pending`/`approved`/`rejected`), `verifier_telegram_id` FK→users |
+| **User** | `users` | `telegram_id` PK, `name`, `reputation_score` (default 100), `created_at` |
+| **UserBalance** | `user_balances` | `user_id` FK→users, `currency_type` (`points`/`crypto`/`custom_token`), `token_address` (nullable), `amount`, PK(user_id, currency_type, token_address) |
+| **Challenge** | `challenges` | `id` PK, `creator_telegram_id` FK→users, `title`, `description`, `reward_type` (`points`/`crypto`/`custom_token`), `reward_amount`, `token_address` (nullable), `duration_days`, `verifier_count` (default 1), `status` (`active`/`completed`/`failed`/`cancelled`), `created_at`, `deadline`, `recurrence` (`none`/`weekly`/`monthly`) |
+| **VerificationEvidence** | `evidence` | `id` PK, `challenge_id` FK→challenges, `user_telegram_id` FK→users, `kind` (`photo`/`document`/`text`), `media_url`, `text_body`, `timestamp`, `verdict` (`pending`/`approved`/`rejected`), `verifier_telegram_id` FK→users, `verification_time` (timestamp) |
 | **VerificationSession** | `sessions` | `id` PK, `user_telegram_id` FK→users, `challenge_id` FK→challenges, `start_date`, `end_date`, `current_streak`, `verified_status` (`in_progress`/`approved`/`failed`) |
-| **GroupCompetition** | `competitions` | `id` PK, `group_chat_id` (Telegram group), `name`, `start_date`, `end_date`, `prize_pool` (points or token units) |
+| **GroupCompetition** | `competitions` | `id` PK, `group_chat_id` (Telegram group), `name`, `start_date`, `end_date`, `prize_pool_currency` (`points`/`crypto`/`custom_token`), `prize_pool_token_address` (nullable), `prize_pool_amount` |
 | **Team** | `teams` | `id` PK, `competition_id` FK→competitions, `name`, `captain_telegram_id` FK→users |
 | **TeamMember** | `team_members` | `team_id` FK, `user_telegram_id` FK, PK(team_id, user_telegram_id) |
-| **Leaderboard** | view `v_leaderboard` | `user_telegram_id`, `display_name`, `reputation_score`, `rank()` desc |
+| **Leaderboard** | view `v_leaderboard` | `user_telegram_id`, `display_name`, `reputation_score`, `points_balance`, `crypto_balance`, `custom_token_balance`, `rank()` desc |
 | **ReputationRecord** | `reputation_log` | `id` PK, `user_telegram_id` FK→users, `delta`, `reason`, `challenge_id` NULL, `at` |
 
 Relationships preserved exactly as General states: user 1—N challenges
@@ -61,26 +62,21 @@ leaderboard aggregates from all the above.
 | `/join <challenge_id>` | join a public challenge; opens evidence flow |
 | `/submit <challenge_id>` | submit fresh evidence (photo/doc/text) |
 | `/verify` | open the verifier queue (challenges assigned to you) |
-| `/stats` | your accuracy, streak, reputation, rank |
+| `/stats` | your accuracy, streak, reputation, rank, average verification time |
 | `/leaderboard` | global leaderboard |
 | `/export` | DM yourself a CSV of your challenge history |
 | `/schedule` | (creator only) set up a recurring weekly/monthly challenge |
 | `/invite <challenge_id> <@username>` | invite specific user to verify your challenge |
+| `/admin_credit <user> <currency_type> <token_address> <amount> <reason>` | manual balance credit (escape hatch) |
+| `/admin_cancel <challenge_id>` | force-cancel a challenge and refund stakes |
 
 Group-scoped (only meaningful in a group chat):
 
 | Command | Purpose |
 | --- | --- |
-| `/newseason <name> <days> <prize>` | create a group competition |
+| `/newseason <name> <days> <currency_type> <token_address> <prize_amount>` | create a group competition |
 | `/jointeam <team_name>` | join a team in the active season |
 | `/standings` | current season team ranking |
-
-Admin (not user-facing, restricted to `ADMIN_TG_ID`):
-
-| Command | Purpose |
-| --- | --- |
-| `/admin_credit <user> <amount> <reason>` | manual reputation grant (anti-abuse escape hatch) |
-| `/admin_cancel <challenge_id>` | force-cancel a challenge and refund stakes |
 
 ## 4. Conversation / UX flows
 
@@ -96,10 +92,10 @@ Admin (not user-facing, restricted to `ADMIN_TG_ID`):
 ### 4.2 Create a challenge (`/newchallenge`)
 1. Bot asks for **title** (1–80 chars) → state `nc:title`.
 2. **Description** (≤ 500 chars).
-3. **Reward type** — inline buttons: `points` `crypto` (CB `ch:reward:<type>`).
-   On `crypto` the bot warns "On-chain payouts are a v2 feature; for now we credit
-   `crypto_balance` off-chain and show them in /stats."
+3. **Reward type** — inline buttons: `points` `crypto` `custom_token` (CB `ch:reward:<type>`).
+   - On `crypto`/`custom_token`: "Staking is required. Your balance will be deducted now. On-chain payouts are a v2 feature; for now we credit balances off-chain."
 4. **Reward amount** (integer ≥ 1).
+   - If `custom_token`, prompt for token address (CB `ch:token:<addr>`).
 5. **Duration** — quick buttons `3d` `7d` `14d` `30d` or custom
    (1–365). Stored on the challenge; `deadline = created_at + duration_days`.
 6. **Verifier count** — `1` (default) or `3` for higher-stakes challenges.
@@ -130,15 +126,15 @@ Admin (not user-facing, restricted to `ADMIN_TG_ID`):
 
 ### 4.4 Verifier flow
 When a verifier taps `✅ Approve` / `❌ Reject`:
-1. Bot records `verdict`, sets `verifier_telegram_id`, recomputes session status.
+1. Bot records `verdict`, sets `verifier_telegram_id`, logs `verification_time`.
 2. If `verifier_count=1` → final. If `verifier_count=3` → wait for all
    three; final verdict = majority. Tie → `approved` (favours participant).
 3. On `approved`:
-   - mark the session `approved`, increment `current_streak`, credit
-     `reward_amount` to the participant's `crypto_balance`.
+   - mark the session `approved`, increment `current_streak`, transfer
+     `reward_amount` from the creator's `user_balance` to the participant's.
    - add +5 to verifier reputation; -1 to participant if rejected.
 4. The participant gets "✅ Approved! +<reward> · streak: N".
-5. The verifier gets "+5 reputation · accuracy: 87%".
+5. The verifier gets "+5 reputation · accuracy: 87% · avg verification time: X min".
 
 ### 4.5 Streak & deadline reminders (System)
 - Cron tick every 60s.
@@ -155,14 +151,14 @@ and a fresh `deadline`. The original is kept for history.
 
 ### 4.7 Stats (`/stats`)
 Card: `Reputation: R · Rank: #K · Accuracy: P% · Current streak: S ·
-Active challenges: A · Completed: C · Failed: F · Crypto balance: B`.
+Active challenges: A · Completed: C · Failed: F · Points: X · Crypto: Y · Custom Tokens: Z · Avg verification time: T min`.
 
 ### 4.8 Leaderboard (`/leaderboard`)
 Top 20: `1. <name> · 240 rep · 92% acc`. "You: #K · R" footer.
 
 ### 4.9 Export (`/export`)
 DM the user a CSV of their challenges + evidence verdicts, header:
-`challenge_id,title,reward,status,verdict,verifier,submitted_at,resolved_at`.
+`challenge_id,title,reward,status,verdict,verifier,submitted_at,verified_at,verification_time`.
 
 ### 4.10 Group season
 - In a group chat, `/newseason` creates a `competitions` row and a
@@ -170,14 +166,12 @@ DM the user a CSV of their challenges + evidence verdicts, header:
   (captains create teams via inline `➕ Create team` → name).
 - During the season, the group leaderboard shows `Team · Members · Points`.
 - On `end_date`, the top team is announced and the prize pool is credited
-  to each member's `crypto_balance` pro-rata.
+  to each member's `user_balance` in the specified currency.
 
 ### 4.11 Admin — manual credit / cancel
-- `/admin_credit` writes a `reputation_log` row with the given delta; the
-  user's `reputation_score` is bumped accordingly.
-- `/admin_cancel` marks a challenge `cancelled` and refunds any staked
-  balances (for v1: no stakes are taken, so this is a no-op except for
-  the status change).
+- `/admin_credit` writes a `user_balance` row with the given currency and token address.
+- `/admin_cancel` marks a challenge `cancelled` and refunds staked
+  balances to the creator's `user_balance`.
 
 ## 5. Edge cases & rules
 
@@ -200,6 +194,8 @@ DM the user a CSV of their challenges + evidence verdicts, header:
   data export.
 - **Timezones** — `deadline` stored UTC, rendered in the user's local
   timezone. Recurrence is wall-clock UTC.
+- **Insufficient stake** — if a user tries to create a challenge with a reward exceeding their balance, show "⚠️ Not enough <currency> in your balance. /help for balance management."
+- **Custom token validation** — if a user specifies a custom token not in their `user_balances`, show "⚠️ This token isn't in your balance. Use /help to add it."
 
 ## 6. External dependencies (mirrors General)
 
@@ -207,9 +203,9 @@ DM the user a CSV of their challenges + evidence verdicts, header:
   callback queries, group chat permissions, media handling, scheduled
   messages.
 - **Database** — PostgreSQL (users, challenges, evidence, sessions,
-  competitions, teams, team_members, reputation_log, reminders).
+  competitions, teams, team_members, reputation_log, user_balances, reminders).
 - **Cloud storage** — S3-compatible (mandatory) for evidence media.
-- **Blockchain** — off-chain `crypto_balance` tracks staked rewards per
+- **Blockchain** — off-chain `user_balance` tracks staked rewards per
   General; on-chain payouts are v2. ERC-20 compatibility is a future
   extension.
 
@@ -224,7 +220,7 @@ sync, no AI evidence validation, no fitness/health API integration.
 | General feature | Design section |
 | --- | --- |
 | Custom time-bound challenges | 4.2 |
-| Stake points/crypto as reward | 4.2 step 4 (off-chain) |
+| Stake points/crypto/custom tokens as reward | 4.2 step 4, 4.4 step 3 |
 | Invite specific users to verify | 3, 4.3 |
 | Submit evidence (photo/doc/text) | 4.3 step 3 |
 | Verify with approve/reject | 4.4 |
@@ -235,6 +231,41 @@ sync, no AI evidence validation, no fitness/health API integration.
 | Seasonal group competitions | 4.10 |
 | Auto-distribute rewards | 4.4 step 3 |
 | Deadline reminders | 4.5 |
-| Challenge statistics | 4.7 |
+| Challenge statistics (completions, avg verification time) | 4.7 |
 | Export history as CSV | 4.9 |
-| Multiple reward currencies | 4.2 step 3 (points/crypto only) |
+| Multiple reward currencies (points, crypto, custom tokens) | 4.2 step 3, 4.10 |
+| i18n for all user-facing strings | All message copy sections |
+
+## 9. i18n Strings
+
+- "Pick your vibe" → `onboarding.pick_vibe`
+- "Staking is required" → `challenge.staking_required`
+- "Your balance will be deducted now" → `challenge.balance_deduction`
+- "Avg verification time" → `stats.avg_verification_time`
+- "Not enough <currency> in your balance" → `error.insufficient_balance`
+- "This token isn't in your balance" → `error.token_not_in_balance`
+
+## 10. Inline Keyboard Layouts
+
+### Challenge Creation
+```
+[Challenge Title] → [Reward Type: Points | Crypto | Custom Token]
+[Description] → [Duration: 3d | 7d | 14d | 30d | Custom]
+[Verdict Count: 1 | 3] → [Recurrence: None | Weekly | Monthly] → [Create Challenge]
+```
+
+### Verification Queue
+```
+[Approve: Challenge #123] [Reject: Challenge #123]
+[Approve: Challenge #456] [Reject: Challenge #456]
+```
+
+### Evidence Submission
+```
+[Photo] [Document] [Text]
+```
+
+### Admin Actions
+```
+[Credit User] [Cancel Challenge]
+```
