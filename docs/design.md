@@ -14,14 +14,14 @@ Telegram ⇄ grammY bot (long polling)
               ├─ session store   (per-chat finite-state machine)
               ├─ service layer   (challenges, evidence, reputation, seasons)
               ├─ cron job        (deadline reminders, season rollover)
-              └─ SQLite persistence
+              └─ PostgreSQL persistence
                    (users, challenges, evidence, sessions, competitions,
                     teams, reputation, reminders)
 ```
 
 - **Runtime**: single Node.js process, grammY, long polling (no inbound
   ports). Media (photos, documents) is fetched from Telegram via
-  `getFile` and stored on the local volume (or S3 if `MEDIA_BUCKET` is set).
+  `getFile` and stored in S3-compatible storage (mandatory per General).
 - **State machine** per chat covers challenge creation, evidence
   submission, and the verifier flow. Other commands are stateless.
 - **Reputation**: a single `reputation_score` column on `users`, updated
@@ -35,15 +35,15 @@ Telegram ⇄ grammY bot (long polling)
 
 | Entity | Table | Fields |
 | --- | --- | --- |
-| **User** | `users` | `tg_id` PK, `name`, `reputation_score` (default 100), `crypto_balance` (default 0), `created_at` |
-| **Challenge** | `challenges` | `id` PK, `creator_tg_id` FK→users, `title`, `description`, `reward_type` (`points`/`crypto`/`token`), `reward_amount`, `duration_days`, `verifier_count` (default 1), `status` (`active`/`completed`/`failed`/`cancelled`), `created_at`, `ends_at`, `recurrence` (`none`/`weekly`/`monthly`) |
-| **VerificationEvidence** | `evidence` | `id` PK, `challenge_id` FK→challenges, `user_tg_id` FK→users, `kind` (`photo`/`document`/`text`), `media_url` NULL, `text_body` NULL, `submitted_at`, `verdict` (`pending`/`approved`/`rejected`), `verifier_tg_id` FK→users NULL |
-| **VerificationSession** | `sessions` | `id` PK, `user_tg_id` FK→users, `challenge_id` FK→challenges, `start_date`, `end_date`, `current_streak`, `verified_status` (`in_progress`/`approved`/`failed`) |
+| **User** | `users` | `telegram_id` PK, `name`, `reputation_score` (default 100), `crypto_balance` (default 0), `created_at` |
+| **Challenge** | `challenges` | `id` PK, `creator_telegram_id` FK→users, `title`, `description`, `reward_type` (`points`/`crypto`), `reward_amount`, `duration_days`, `verifier_count` (default 1), `status` (`active`/`completed`/`failed`/`cancelled`), `created_at`, `deadline`, `recurrence` (`none`/`weekly`/`monthly`) |
+| **VerificationEvidence** | `evidence` | `id` PK, `challenge_id` FK→challenges, `user_telegram_id` FK→users, `kind` (`photo`/`document`/`text`), `media_url`, `text_body`, `timestamp`, `verdict` (`pending`/`approved`/`rejected`), `verifier_telegram_id` FK→users |
+| **VerificationSession** | `sessions` | `id` PK, `user_telegram_id` FK→users, `challenge_id` FK→challenges, `start_date`, `end_date`, `current_streak`, `verified_status` (`in_progress`/`approved`/`failed`) |
 | **GroupCompetition** | `competitions` | `id` PK, `group_chat_id` (Telegram group), `name`, `start_date`, `end_date`, `prize_pool` (points or token units) |
-| **Team** | `teams` | `id` PK, `competition_id` FK→competitions, `name`, `captain_tg_id` FK→users |
-| **TeamMember** | `team_members` | `team_id` FK, `user_tg_id` FK, PK(team_id, user_tg_id) |
-| **Leaderboard** | view `v_leaderboard` | `user_tg_id`, `display_name`, `reputation_score`, `rank()` desc |
-| **ReputationRecord** | `reputation_log` | `id` PK, `user_tg_id` FK→users, `delta`, `reason`, `challenge_id` NULL, `at` |
+| **Team** | `teams` | `id` PK, `competition_id` FK→competitions, `name`, `captain_telegram_id` FK→users |
+| **TeamMember** | `team_members` | `team_id` FK, `user_telegram_id` FK, PK(team_id, user_telegram_id) |
+| **Leaderboard** | view `v_leaderboard` | `user_telegram_id`, `display_name`, `reputation_score`, `rank()` desc |
+| **ReputationRecord** | `reputation_log` | `id` PK, `user_telegram_id` FK→users, `delta`, `reason`, `challenge_id` NULL, `at` |
 
 Relationships preserved exactly as General states: user 1—N challenges
 (created), user 1—N evidence, user 1—N sessions, challenge 1—N evidence,
@@ -65,6 +65,7 @@ leaderboard aggregates from all the above.
 | `/leaderboard` | global leaderboard |
 | `/export` | DM yourself a CSV of your challenge history |
 | `/schedule` | (creator only) set up a recurring weekly/monthly challenge |
+| `/invite <challenge_id> <@username>` | invite specific user to verify your challenge |
 
 Group-scoped (only meaningful in a group chat):
 
@@ -95,13 +96,12 @@ Admin (not user-facing, restricted to `ADMIN_TG_ID`):
 ### 4.2 Create a challenge (`/newchallenge`)
 1. Bot asks for **title** (1–80 chars) → state `nc:title`.
 2. **Description** (≤ 500 chars).
-3. **Reward type** — inline buttons: `points` `crypto` `token`
-   (CB `ch:reward:<type>`). On `crypto`/`token` the bot warns
-   "On-chain payouts are a v2 feature; for now we credit `crypto_balance`
-   off-chain points and show them in /stats."
+3. **Reward type** — inline buttons: `points` `crypto` (CB `ch:reward:<type>`).
+   On `crypto` the bot warns "On-chain payouts are a v2 feature; for now we credit
+   `crypto_balance` off-chain and show them in /stats."
 4. **Reward amount** (integer ≥ 1).
 5. **Duration** — quick buttons `3d` `7d` `14d` `30d` or custom
-   (1–365). Stored on the challenge; `ends_at = created_at + duration_days`.
+   (1–365). Stored on the challenge; `deadline = created_at + duration_days`.
 6. **Verifier count** — `1` (default) or `3` for higher-stakes challenges.
 7. **Recurrence** — `none` / `weekly` / `monthly`. On `weekly`/`monthly`
    a cron job spawns the next instance when the current one ends (creator
@@ -121,7 +121,7 @@ Admin (not user-facing, restricted to `ADMIN_TG_ID`):
 3. **Text-step flow**:
    - Step 1: kind — `📷 Photo` `📄 Document` `📝 Text` (CB `ev:kind:<k>`).
    - Step 2 (photo/doc): bot waits for the next media message, downloads
-     via `getFile`, stores URL or local path. (Text: skip.)
+     via `getFile`, stores URL in S3. (Text: skip.)
    - Step 3: optional caption (≤ 200 chars).
    - On submit: insert `evidence` row with `verdict=pending`; notify the
      assigned verifier(s) with the evidence card and
@@ -130,7 +130,7 @@ Admin (not user-facing, restricted to `ADMIN_TG_ID`):
 
 ### 4.4 Verifier flow
 When a verifier taps `✅ Approve` / `❌ Reject`:
-1. Bot records `verdict`, sets `verifier_tg_id`, recomputes session status.
+1. Bot records `verdict`, sets `verifier_telegram_id`, recomputes session status.
 2. If `verifier_count=1` → final. If `verifier_count=3` → wait for all
    three; final verdict = majority. Tie → `approved` (favours participant).
 3. On `approved`:
@@ -142,16 +142,16 @@ When a verifier taps `✅ Approve` / `❌ Reject`:
 
 ### 4.5 Streak & deadline reminders (System)
 - Cron tick every 60s.
-- For every active session where `ends_at - 24h <= now < ends_at` and no
+- For every active session where `deadline - 24h <= now < deadline` and no
   reminder sent yet → DM participant "⏰ <title> ends in 24h — submit
   evidence if you haven't."
-- For every session where `ends_at <= now` and `verified_status=in_progress`
+- For every session where `deadline <= now` and `verified_status=in_progress`
   → mark `failed`, notify the creator, free the verifier queue.
 
 ### 4.6 Recurring challenges
-When a recurring challenge's `ends_at` passes and the next instance is not
-cancelled, a new `challenges` row is inserted with `created_at = ends_at`
-and a fresh `ends_at`. The original is kept for history.
+When a recurring challenge's `deadline` passes and the next instance is not
+cancelled, a new `challenges` row is inserted with `created_at = deadline`
+and a fresh `deadline`. The original is kept for history.
 
 ### 4.7 Stats (`/stats`)
 Card: `Reputation: R · Rank: #K · Accuracy: P% · Current streak: S ·
@@ -182,7 +182,7 @@ DM the user a CSV of their challenges + evidence verdicts, header:
 ## 5. Edge cases & rules
 
 - **One session per user per challenge** — enforced by the
-  `(user_tg_id, challenge_id)` unique key on `sessions`. Re-joining
+  `(user_telegram_id, challenge_id)` unique key on `sessions`. Re-joining
   resumes the existing session.
 - **Verifier rotation** — a verifier who is also a participant in the
   same challenge cannot verify it (self-deal guard). The picker
@@ -194,12 +194,11 @@ DM the user a CSV of their challenges + evidence verdicts, header:
 - **Recurring rollover race** — the cron uses
   `INSERT … WHERE NOT EXISTS` to avoid double-spawning the next
   instance on a restart.
-- **Media storage** — Telegram file IDs are short-lived; on submit we
-  download via `getFile` and persist a local copy (or upload to S3 if
-  configured). The `media_url` is stable.
+- **Media storage** — S3 is mandatory (no local fallback). Telegram file IDs
+  are fetched via `getFile` and uploaded to S3 immediately.
 - **Privacy** — `/export` returns only the caller's data; no global
   data export.
-- **Timezones** — `ends_at` stored UTC, rendered in the user's local
+- **Timezones** — `deadline` stored UTC, rendered in the user's local
   timezone. Recurrence is wall-clock UTC.
 
 ## 6. External dependencies (mirrors General)
@@ -207,13 +206,12 @@ DM the user a CSV of their challenges + evidence verdicts, header:
 - **Telegram Bot API** via grammY — long polling, inline keyboards,
   callback queries, group chat permissions, media handling, scheduled
   messages.
-- **Database** — SQLite (users, challenges, evidence, sessions,
+- **Database** — PostgreSQL (users, challenges, evidence, sessions,
   competitions, teams, team_members, reputation_log, reminders).
-- **Cloud storage** — S3-compatible (optional via `MEDIA_BUCKET` env) for
-  evidence media; falls back to a local volume.
-- **Blockchain** — out of scope for v1 (the design says "ERC-20 compatible
-  tokens" but the off-chain `crypto_balance` is the source of truth; on-chain
-  payouts are explicitly a v2 task).
+- **Cloud storage** — S3-compatible (mandatory) for evidence media.
+- **Blockchain** — off-chain `crypto_balance` tracks staked rewards per
+  General; on-chain payouts are v2. ERC-20 compatibility is a future
+  extension.
 
 ## 7. Non-goals (inherited from General)
 
@@ -227,7 +225,7 @@ sync, no AI evidence validation, no fitness/health API integration.
 | --- | --- |
 | Custom time-bound challenges | 4.2 |
 | Stake points/crypto as reward | 4.2 step 4 (off-chain) |
-| Invite verifiers | 4.3 step 1 |
+| Invite specific users to verify | 3, 4.3 |
 | Submit evidence (photo/doc/text) | 4.3 step 3 |
 | Verify with approve/reject | 4.4 |
 | Track streaks | 4.5, 2 (`sessions.current_streak`) |
@@ -239,4 +237,4 @@ sync, no AI evidence validation, no fitness/health API integration.
 | Deadline reminders | 4.5 |
 | Challenge statistics | 4.7 |
 | Export history as CSV | 4.9 |
-| Multiple reward currencies | 4.2 step 3 (off-chain for v1) |
+| Multiple reward currencies | 4.2 step 3 (points/crypto only) |
