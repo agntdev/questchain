@@ -2,301 +2,183 @@
 
 ## SCREENS
 
-### 1. Onboarding Screen
-- **Trigger**: `/start` (first-time user)
+### 1. My Challenges Screen
+- **Trigger**: `/mychallenges`
 - **Message**: 
   ```
-  Pick your vibe 🎯
-  [🏋 Athlete] [📚 Learner] [🎨 Creator]
-  ```
-- **Keyboard**: Inline buttons for vibe selection
-- **Transitions**:
-  - Button click → `onboarding:vibe_selected` → Show main menu
-
-### 2. Challenge Creation Wizard
-- **Trigger**: `/newchallenge`
-- **Steps**:
-  1. **Title Input** (state: `nc:title`)
-    - Message: "What's your challenge title? (1-80 chars)"
-    - Keyboard: `Skip` (optional)
-  2. **Description Input** (state: `nc:description`)
-    - Message: "Describe your challenge (≤500 chars)"
-  3. **Reward Type Selection** (state: `nc:reward`)
-    - Message: "Choose reward type"
-    - Keyboard: 
-      ```
-      [Points] [Crypto] [Custom Token]
-      ```
-  4. **Reward Amount Input** (state: `nc:amount`)
-    - Message: "Enter reward amount (≥1)"
-  5. **Duration Selection** (state: `nc:duration`)
-    - Message: "How long should this challenge last?"
-    - Keyboard: 
-      ```
-      [3d] [7d] [14d] [30d] [Custom]
-      ```
-  6. **Verifier Count Selection** (state: `nc:verifiers`)
-    - Message: "How many verifiers?"
-    - Keyboard: 
-      ```
-      [1] [3]
-      ```
-  7. **Recurrence Selection** (state: `nc:recurrence`)
-    - Message: "Should this challenge repeat?"
-    - Keyboard: 
-      ```
-      [None] [Weekly] [Monthly]
-      ```
-  8. **Confirmation** (state: `nc:confirm`)
-    - Message: "Confirm your challenge"
-    - Keyboard: 
-      ```
-      [✅ Create]
-      ```
-
-### 3. Challenge Join Screen
-- **Trigger**: `/join <challenge_id>` or inline "Join" button
-- **Message**: 
-  ```
-  Challenge #<id> — <title>
-  Reward: <reward_type> <amount>
-  Duration: <duration_days> days
-  [Join] [Back]
+  🎯 Your Challenges
+  [Active Challenges] [Past Challenges]
   ```
 - **Transitions**:
-  - `Join` → `join:started` → Evidence submission flow
+  - `Active Challenges` → `mychallenges:active`
+  - `Past Challenges` → `mychallenges:history`
 
-### 4. Evidence Submission Flow
-- **Trigger**: `/submit <challenge_id>` or inline "Submit" button
-- **Steps**:
-  1. **Media Type Selection** (state: `submit:type`)
-    - Message: "What type of evidence?"
-    - Keyboard: 
-      ```
-      [📷 Photo] [📄 Document] [📝 Text]
-      ```
-  2. **Media Upload** (state: `submit:media`)
-    - Message: "Send your evidence (photo/document)"
-  3. **Caption Input** (state: `submit:caption`)
-    - Message: "Add an optional caption (≤200 chars)"
-  4. **Submission Confirmation** (state: `submit:confirm`)
-    - Message: "Submit evidence?"
-    - Keyboard: 
-      ```
-      [✅ Submit] [Cancel]
-      ```
-
-### 5. Verification Queue
-- **Trigger**: `/verify` or inline "Verify" button
+### 2. Team Joining Screen
+- **Trigger**: `/jointeam <team_name>` or inline button
 - **Message**: 
   ```
-  Verification Requests 📌
-  [Approve: #123] [Reject: #123]
-  [Approve: #456] [Reject: #456]
+  Join Team <team_name>
+  [Confirm Join] [Back]
   ```
-- **Keyboard**: Inline buttons for each pending verification
+- **Transitions**:
+  - `Confirm Join` → `team:joined` (create team_member record)
 
-### 6. Stats Screen
-- **Trigger**: `/stats`
+### 3. Team Standings Screen
+- **Trigger**: `/standings`
 - **Message**: 
   ```
-  📊 Your Stats
-  Reputation: <score> · Rank: #<rank>
-  Accuracy: <accuracy>% · Streak: <streak>
-  Points: <points> · Crypto: <amount>
-  Avg verification time: <time> min
-  ```
-- **Keyboard**: `Back to Menu`
-
-### 7. Leaderboard Screen
-- **Trigger**: `/leaderboard`
-- **Message**: 
-  ```
-  🏆 Top 20
-  1. <Name> · <rep> rep · <acc>%
+  🏆 Season Standings
+  1. <Team A> · 150 points · 3 members
+  2. <Team B> · 120 points · 4 members
   ...
-  You: #<your_rank> · <your_rep>
   ```
 - **Keyboard**: `Back to Menu`
 
-### 8. Group Season Creation
-- **Trigger**: `/newseason` in group chat
+### 4. CSV Export Screen
+- **Trigger**: `/export`
 - **Message**: 
   ```
-  Create Season
-  Name: [Input field]
-  Duration: [Input field]
-  Prize: [Currency] [Amount]
-  [Create]
+  📥 Exporting your challenge history...
+  (generating CSV)
+  ```
+- **Transitions**:
+  - On success → send CSV file via DM
+
+### 5. Admin Credit Screen
+- **Trigger**: `/admin_credit <user> <currency> <amount> <reason>`
+- **Message**: 
+  ```
+  💰 Crediting <user> with <amount> <currency>
+  Reason: <reason>
+  [Confirm] [Cancel]
+  ```
+
+### 6. Admin Cancel Screen
+- **Trigger**: `/admin_cancel <challenge_id>`
+- **Message**: 
+  ```
+  ⚠️ Cancel Challenge #<id>?
+  This will refund all stakes
+  [Confirm Cancel] [Cancel]
   ```
 
 ## COMPONENTS
 
-### 1. Challenge Creation Wizard
-- **Structure**: Multi-step form with inline keyboard navigation
-- **Reusability**: Used in `/newchallenge` and recurring challenge creation
-- **Validation**: 
-  - Title: 1-80 chars
-  - Description: ≤500 chars
-  - Reward amount: ≥1
-  - Duration: 1-365 days
+### 1. Team Joining Form
+- **Structure**: Input field for team name with validation
+- **Constraints**: 
+  - Team must exist in current competition
+  - User must not already be in a team
+  - Team must have open slots
 
-### 2. Verification Queue
-- **Structure**: Paginated list of pending verifications
-- **Features**:
-  - Approve/Reject buttons
-  - Auto-refresh every 5 minutes
-  - Filter by challenge type
+### 2. Team Standings Table
+- **Structure**: Paginated list of teams with:
+  - Team name
+  - Member count
+  - Total points
+  - Rank position
+- **Sorting**: Descending by total points
 
-### 3. Evidence Submission Flow
-- **Structure**: Wizard with media handling
-- **Constraints**:
-  - Max 5 evidence submissions per session
-  - Media stored in S3 (URL)
-  - Text evidence limited to 200 chars
+### 3. Challenge History Table
+- **Structure**: Two tabs (Active/Past) with:
+  - Challenge title
+  - Status (Active/Completed/Failed)
+  - Reward amount
+  - Verification status
 
-### 4. Leaderboard Component
-- **Structure**: Ranked list with pagination
-- **Data Source**: `v_leaderboard` SQL view
-- **Sorting**: Descending by reputation score
+### 4. CSV Exporter
+- **Structure**: Background task that:
+  - Queries user's challenge history
+  - Formats as CSV with headers:
+    `challenge_id,title,reward,status,verdict,verifier,submitted_at`
+  - Sends file via DM with "Here's your history" message
 
-### 5. Reputation Dialog
-- **Structure**: Modal dialog showing verification history
-- **Fields**:
-  - Accuracy percentage
-  - Total verifications
-  - Recent verification timestamps
+### 5. Admin Command Dialog
+- **Structure**: Confirmation modal for:
+  - Credit amount validation
+  - Challenge cancellation confirmation
+  - Role-based access control (only admins)
 
 ## TRANSITIONS
 
 | Current State | Input | Next State | Side Effects |
 |---------------|-------|------------|--------------|
-| `onboarding:vibe` | Vibe button click | `main_menu` | Insert user record |
-| `nc:title` | Text input | `nc:description` | Store title |
-| `nc:reward` | `Crypto` selected | `nc:token` | Show token address prompt |
-| `nc:confirm` | `Create` clicked | `challenge_created` | Deduct user balance, insert challenge |
-| `join:started` | `Join` clicked | `submit:type` | Create session record |
-| `submit:media` | Photo received | `submit:caption` | Store media URL |
-| `submit:confirm` | `Submit` clicked | `evidence_submitted` | Insert evidence, notify verifiers |
-| `verify:queue` | `Approve` clicked | `verification_complete` | Update evidence verdict, adjust reputation |
-| `stats:view` | `Back` clicked | `main_menu` | None |
-| `cron:tick` | 24h deadline reached | `session_failed` | Mark session failed, refund creator |
+| `mychallenges:active` | `Challenge #123` clicked | `challenge:details` | Show challenge details |
+| `team:join` | `Confirm` clicked | `team:joined` | Insert team_member record |
+| `standings:view` | `Team A` clicked | `team:details` | Show team members and stats |
+| `export:start` | `Confirm` clicked | `export:complete` | Generate and send CSV |
+| `admin:credit` | `Confirm` clicked | `admin:credited` | Update user_balance |
+| `admin:cancel` | `Confirm` clicked | `admin:cancelled` | Mark challenge as cancelled, refund balances |
 
 ## DATA
 
-### Entities & Fields
+### New Entities & Fields
 
-1. **User**
-   - `telegram_id` (PK)
-   - `name`
-   - `reputation_score` (default 100)
-   - `created_at`
+1. **TeamMember**
+   - `team_id` (FK→teams)
+   - `user_id` (FK→users)
+   - `joined_at` (timestamp)
+   - Unique constraint on `(team_id, user_id)`
 
-2. **UserBalance**
-   - `user_id` (FK)
-   - `currency_type` (points/crypto/custom_token)
-   - `token_address` (nullable)
-   - `amount`
-
-3. **Challenge**
-   - `id` (PK)
-   - `creator_id` (FK)
-   - `title`
-   - `description`
-   - `reward_type`
-   - `reward_amount`
-   - `token_address`
-   - `duration_days`
-   - `verifier_count`
-   - `status`
-   - `deadline`
-   - `recurrence`
-
-4. **VerificationEvidence**
-   - `id` (PK)
-   - `challenge_id` (FK)
-   - `user_id` (FK)
-   - `kind` (photo/document/text)
-   - `media_url`
-   - `text_body`
-   - `timestamp`
-   - `verdict`
-   - `verifier_id` (FK)
-   - `verification_time`
-
-5. **VerificationSession**
-   - `id` (PK)
-   - `user_id` (FK)
-   - `challenge_id` (FK)
-   - `start_date`
-   - `end_date`
-   - `current_streak`
-   - `verified_status`
-
-6. **GroupCompetition**
-   - `id` (PK)
-   - `group_chat_id`
-   - `name`
-   - `start_date`
-   - `end_date`
-   - `prize_pool_currency`
-   - `prize_pool_token_address`
-   - `prize_pool_amount`
+2. **Team**
+   - `competition_id` (FK→competitions)
+   - `name` (unique per competition)
+   - `captain_id` (FK→users)
+   - `max_members` (default 5)
 
 ### Constraints
-- Unique constraint on `(user_id, challenge_id)` for sessions
-- Foreign key constraints for all relationships
-- `deadline` must be in future (validated on insert)
-- `reward_amount` must not exceed user's balance
+- TeamMember: user can only join one team per competition
+- Challenge: creator must have sufficient balance for reward
+- Team: max members enforced by `max_members` field
 
 ## Acceptance Notes
 
-1. **Challenge Creation**
-   - User must have sufficient balance for selected reward
-   - Creator's balance is deducted immediately
-   - Recurring challenges spawn new instances on completion
+1. **Team Management**
+   - `/jointeam` must validate team existence and open slots
+   - Team standings must update in real-time with member points
+   - Team captains can only create teams in active competitions
 
-2. **Verification Flow**
-   - Verifier cannot verify their own challenge
-   - 3-verifier challenges use majority rule (tie → approve)
-   - Verifier reputation updated atomically
+2. **Challenge History**
+   - `/mychallenges` must show active and past challenges with status
+   - Past challenges include completion status and verification details
+   - Filtering by reward type and verification status
 
-3. **Deadline Management**
-   - 24h reminders sent via DM
-   - Failed sessions refund creator's reward
-   - Recurring challenges auto-rollover if not cancelled
+3. **CSV Export**
+   - Export includes all user's challenges with verification data
+   - File sent via DM with 24h expiration
+   - Only user's own data included (privacy compliance)
 
-4. **Group Competitions**
-   - Prize pool distributed equally to team members
-   - Team creation must happen before season starts
-   - Only group admins can create seasons
+4. **Admin Commands**
+   - `/admin_credit` requires admin role and valid currency
+   - `/admin_cancel` refunds all staked rewards to creator
+   - Admin actions logged in reputation_log with "admin" reason
 
-5. **Media Handling**
-   - All media must be uploaded to S3
-   - Telegram file IDs stored temporarily
-   - Media URLs must be publicly accessible
+5. **Group Competitions**
+   - `/newseason` creates competition with prize pool
+   - Team standings auto-updated when members complete challenges
+   - Prize pool distributed equally to team members at season end
 
-6. **Reputation System**
-   - +5 for correct verification
-   - -1 for rejected evidence
-   - Accuracy calculated as (approved / total) * 100
+6. **Error Handling**
+   - Invalid team name → "Team not found" error
+   - Non-admin using admin commands → access denied
+   - CSV export failure → retry mechanism with 3 attempts
 
-7. **Error Handling**
-   - Insufficient balance → show error and refund
-   - Invalid token address → reject submission
-   - Duplicate evidence → overwrite with latest submission
+7. **Security**
+   - Team joining requires competition ID validation
+   - Admin commands require role check in database
+   - CSV export uses temporary signed URLs for S3 access
 
-8. **Security**
-   - All commands require valid session
-   - Admin commands require role check
-   - Media URLs signed for S3 access
+8. **Performance**
+   - Team standings refresh every 5 minutes
+   - Challenge history pagination (20 items per page)
+   - Admin commands execute in <500ms with transaction rollback on error
 
-9. **Performance**
-   - Leaderboard updates in real-time
-   - Cron jobs run every 60s
-   - Verification queue paginated (20 items per page)
+9. **Localization**
+   - Team names and competition titles stored in original language
+   - Points displayed with localized number formatting
+   - CSV export uses user's locale for date/time formatting
 
-10. **Localization**
-    - All user-facing strings must be i18n-ready
-    - Date/time formatting respects user locale
-    - Currency symbols localized (e.g., $, €)
+10. **Edge Cases**
+    - Team with zero members → hidden from standings
+    - Admin credit to non-existent user → error with suggestion
+    - Challenge with all verifiers offline → auto-rollover to next day
