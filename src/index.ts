@@ -88,3 +88,14 @@ export {
   validateTokenAddress,
   formatConfirmationMessage,
 } from "./services/challenge_creation";
+export { Evidence, EvidenceKind, EvidenceVerdict, DEFAULT_EVIDENCE_VERDICT, createEvidence } from "./models/evidence";
+export type { EvidenceSubmissionQuery, EvidenceSubmissionData, SubmissionStep } from "./services/evidence_submission";
+export {
+  emptySubmissionData,
+  validateKind,
+  validateCaption,
+  buildEvidenceTextBody,
+  formatConfirmationCard as formatEvidenceConfirmationCard,
+  formatSubmissionResult,
+} from "./services/evidence_submission";
+export { createSubmitComposer } from "./commands/submit";
