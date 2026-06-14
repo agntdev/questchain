@@ -47,3 +47,6 @@ export { validateJoinTeamArgs, joinTeam, formatJoinTeamMessage } from "./service
 export type { StandingsQuery, StandingsView } from "./services/standings";
 export { getStandingsView, formatStandingsMessage } from "./services/standings";
 export { createStandingsComposer } from "./commands/standings";
+export { createAdminCancelComposer } from "./commands/admin_cancel";
+export type { AdminCancelQuery } from "./services/admin_cancel";
+export { validateAdminCancelArgs } from "./services/admin_cancel";
