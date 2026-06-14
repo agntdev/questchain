@@ -1,4 +1,5 @@
 import type { User } from "../models/user";
+import type { Challenge } from "../models/challenge";
 
 export interface AdminCreditQuery {
   findUser(telegramId: number): Promise<User | null>;
@@ -137,4 +138,97 @@ export function formatAdminCreditMessage(result: AdminCreditResult): string {
 
 function escapeMarkdown(text: string): string {
   return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, "\\$&");
+}
+
+export interface AdminCancelQuery {
+  findChallenge(id: number): Promise<Challenge | null>;
+  cancelChallenge(id: number): Promise<void>;
+  refundBalance(params: {
+    userId: number;
+    currencyType: string;
+    tokenAddress: string | null;
+    amount: number;
+  }): Promise<void>;
+  logAdminAction(params: {
+    userTelegramId: number;
+    delta: number;
+    reason: string;
+  }): Promise<void>;
+}
+
+export interface AdminCancelResult {
+  kind: "cancelled" | "challenge_not_found" | "invalid_args" | "already_cancelled";
+  challenge?: Challenge;
+}
+
+export function validateAdminCancelArgs(args: {
+  challengeId: string | undefined;
+}):
+  | { ok: true; challengeId: number }
+  | { ok: false; error: string }
+{
+  if (!args.challengeId) {
+    return { ok: false, error: "Challenge ID is required." };
+  }
+  const challengeId = Number(args.challengeId);
+  if (!Number.isInteger(challengeId) || challengeId <= 0) {
+    return { ok: false, error: "Challenge ID must be a positive integer." };
+  }
+  return { ok: true, challengeId };
+}
+
+export async function cancelAdminChallenge(
+  query: AdminCancelQuery,
+  challengeId: number,
+): Promise<AdminCancelResult> {
+  const challenge = await query.findChallenge(challengeId);
+  if (!challenge) {
+    return { kind: "challenge_not_found" };
+  }
+
+  if (challenge.status === "cancelled") {
+    return { kind: "already_cancelled", challenge };
+  }
+
+  await query.cancelChallenge(challengeId);
+
+  await query.refundBalance({
+    userId: challenge.creator_id,
+    currencyType: challenge.reward_type,
+    tokenAddress: challenge.token_address,
+    amount: challenge.reward_amount,
+  });
+
+  await query.logAdminAction({
+    userTelegramId: challenge.creator_id,
+    delta: 0,
+    reason: `admin_cancel: challenge #${challengeId}`,
+  });
+
+  return {
+    kind: "cancelled",
+    challenge: { ...challenge, status: "cancelled" },
+  };
+}
+
+export function formatAdminCancelMessage(result: AdminCancelResult): string {
+  switch (result.kind) {
+    case "challenge_not_found":
+      return "⚠️ Challenge not found. Make sure the challenge ID is correct.";
+
+    case "already_cancelled":
+      return `⚠️ Challenge #${result.challenge!.id} is already cancelled.`;
+
+    case "cancelled":
+      return [
+        `🚫 *Challenge Cancelled*`,
+        "",
+        `Challenge \\#${result.challenge!.id} \\(${escapeMarkdown(result.challenge!.title)}\\) has been cancelled\\.`,
+        `Refunded ${result.challenge!.reward_amount} ${result.challenge!.reward_type} to creator\\.`,
+      ].join("\n");
+
+    case "invalid_args":
+    default:
+      return "⚠️ Something went wrong.";
+  }
 }
