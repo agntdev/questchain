@@ -50,3 +50,19 @@ export { createStandingsComposer } from "./commands/standings";
 export { createAdminCreditComposer } from "./commands/admin_credit";
 export type { AdminCreditQuery, AdminCreditResult } from "./services/admin";
 export { validateAdminCreditArgs, creditAdminUser, formatAdminCreditMessage } from "./services/admin";
+export type {
+  CronQuery,
+  NearingDeadlineSession,
+  PastDeadlineSession,
+  RecurringChallenge,
+  SpawnRecurringParams,
+  EndedCompetition,
+  TopTeam,
+} from "./services/cron";
+export {
+  processDeadlineReminders,
+  processSessionFailures,
+  processRecurringChallenges,
+  processSeasonRollover,
+  startCron,
+} from "./services/cron";
