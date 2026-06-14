@@ -66,3 +66,14 @@ export {
   processSeasonRollover,
   startCron,
 } from "./services/cron";
+export { createNewChallengeComposer } from "./commands/newchallenge";
+export type { ChallengeCreationQuery, ChallengeCreationData, CreationStep } from "./services/challenge_creation";
+export {
+  emptyCreationData,
+  validateTitle,
+  validateDescription,
+  validateDuration,
+  validateRewardAmount,
+  validateTokenAddress,
+  formatConfirmationMessage,
+} from "./services/challenge_creation";
