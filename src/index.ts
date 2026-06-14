@@ -30,3 +30,6 @@ export {
   createSeasonDates,
 } from "./services/season";
 export { createSeasonComposer } from "./commands/newseason";
+export { createMyChallengesComposer } from "./commands/mychallenges";
+export type { MyChallengesQuery, MyChallengesView } from "./services/mychallenges";
+export { getMyChallengesView, formatMyChallengesMessage } from "./services/mychallenges";
