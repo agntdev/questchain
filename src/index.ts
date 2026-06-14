@@ -22,7 +22,15 @@ export {
   PrizeCurrency,
   createCompetition,
 } from "./models/competition";
-export { Team, TeamMember, createTeam, createTeamMember } from "./models/team";
+export {
+  Team,
+  TeamMember,
+  TeamStanding,
+  STANDINGS_PAGE_SIZE,
+  createTeam,
+  createTeamMember,
+  createTeamStanding,
+} from "./models/team";
 export type { SeasonQuery } from "./services/season";
 export {
   isValidPrizeCurrency,
@@ -36,3 +44,6 @@ export { getMyChallengesView, formatMyChallengesMessage } from "./services/mycha
 export { createJoinTeamComposer } from "./commands/jointeam";
 export type { JoinTeamQuery, JoinTeamResult } from "./services/jointeam";
 export { validateJoinTeamArgs, joinTeam, formatJoinTeamMessage } from "./services/jointeam";
+export type { StandingsQuery, StandingsView } from "./services/standings";
+export { getStandingsView, formatStandingsMessage } from "./services/standings";
+export { createStandingsComposer } from "./commands/standings";

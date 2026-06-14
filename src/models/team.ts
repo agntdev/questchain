@@ -35,3 +35,29 @@ export function createTeamMember(params: {
     joined_at: new Date(),
   };
 }
+
+export interface TeamStanding {
+  team_id: number;
+  team_name: string;
+  member_count: number;
+  score: number;
+  rank: number;
+}
+
+export const STANDINGS_PAGE_SIZE = 20;
+
+export function createTeamStanding(params: {
+  team_id: number;
+  team_name: string;
+  member_count: number;
+  score: number;
+  rank: number;
+}): TeamStanding {
+  return {
+    team_id: params.team_id,
+    team_name: params.team_name,
+    member_count: params.member_count,
+    score: params.score,
+    rank: params.rank,
+  };
+}
