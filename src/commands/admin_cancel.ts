@@ -1,6 +1,13 @@
-import { Composer, Context } from "grammy";
+import { Composer, Context, InlineKeyboard } from "grammy";
 import type { AdminCancelQuery } from "../services/admin";
-import { validateAdminCancelArgs, cancelAdminChallenge, formatAdminCancelMessage } from "../services/admin";
+import {
+  validateAdminCancelArgs,
+  cancelAdminChallenge,
+  formatAdminCancelMessage,
+} from "../services/admin";
+
+const CONFIRM_CB = /^ac:confirm:(\d+)$/;
+const ABORT_CB = /^ac:cancel:(\d+)$/;
 
 export function createAdminCancelComposer(query: AdminCancelQuery): Composer<Context> {
   const composer = new Composer<Context>();
@@ -44,11 +51,53 @@ export function createAdminCancelComposer(query: AdminCancelQuery): Composer<Con
       return;
     }
 
-    const result = await cancelAdminChallenge(query, validation.challengeId);
+    const challenge = await query.findChallenge(validation.challengeId);
+    if (!challenge) {
+      await ctx.reply("⚠️ Challenge not found. Make sure the challenge ID is correct.");
+      return;
+    }
 
+    if (challenge.status === "cancelled") {
+      await ctx.reply(`⚠️ Challenge #${challenge.id} is already cancelled.`);
+      return;
+    }
+
+    const confirmMessage = [
+      `⚠️ *Cancel Challenge \\#${challenge.id}?*`,
+      `_Title:_ ${escapeMarkdown(challenge.title)}`,
+      `_Reward:_ ${challenge.reward_amount} ${challenge.reward_type}`,
+      "",
+      "This will refund all staked rewards to the creator\\.",
+    ].join("\n");
+
+    const keyboard = new InlineKeyboard()
+      .text("✅ Confirm Cancel", `ac:confirm:${challenge.id}`)
+      .text("❌ Cancel", `ac:cancel:${challenge.id}`);
+
+    await ctx.reply(confirmMessage, {
+      parse_mode: "MarkdownV2",
+      reply_markup: keyboard,
+    });
+  });
+
+  composer.callbackQuery(CONFIRM_CB, async (ctx) => {
+    const challengeId = parseInt(ctx.match![1], 10);
+
+    const result = await cancelAdminChallenge(query, challengeId);
     const message = formatAdminCancelMessage(result);
-    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(message, { parse_mode: "MarkdownV2" });
+  });
+
+  composer.callbackQuery(ABORT_CB, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText("❌ Challenge cancellation aborted.");
   });
 
   return composer;
+}
+
+function escapeMarkdown(text: string): string {
+  return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, "\\$&");
 }
