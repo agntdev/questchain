@@ -47,3 +47,6 @@ export { validateJoinTeamArgs, joinTeam, formatJoinTeamMessage } from "./service
 export type { StandingsQuery, StandingsView } from "./services/standings";
 export { getStandingsView, formatStandingsMessage } from "./services/standings";
 export { createStandingsComposer } from "./commands/standings";
+export { createAdminCreditComposer } from "./commands/admin_credit";
+export type { AdminCreditQuery, AdminCreditResult } from "./services/admin";
+export { validateAdminCreditArgs, creditAdminUser, formatAdminCreditMessage } from "./services/admin";
