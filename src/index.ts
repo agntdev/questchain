@@ -33,3 +33,6 @@ export { createSeasonComposer } from "./commands/newseason";
 export { createMyChallengesComposer } from "./commands/mychallenges";
 export type { MyChallengesQuery, MyChallengesView } from "./services/mychallenges";
 export { getMyChallengesView, formatMyChallengesMessage } from "./services/mychallenges";
+export { createJoinTeamComposer } from "./commands/jointeam";
+export type { JoinTeamQuery, JoinTeamResult } from "./services/jointeam";
+export { validateJoinTeamArgs, joinTeam, formatJoinTeamMessage } from "./services/jointeam";
