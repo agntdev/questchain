@@ -66,3 +66,21 @@ export {
   processSeasonRollover,
   startCron,
 } from "./services/cron";
+export {
+  Evidence,
+  EvidenceKind,
+  Verdict,
+  DEFAULT_VERDICT,
+  createEvidence,
+} from "./models/evidence";
+export type {
+  EvidenceSubmissionQuery,
+  EvidenceSubmitResult,
+} from "./services/evidence";
+export {
+  validateEvidenceKind,
+  validateSubmitArgs,
+  submitEvidence,
+  formatSubmitResult,
+} from "./services/evidence";
+export { createEvidenceSubmissionComposer } from "./commands/evidence_submission";
