@@ -17,3 +17,5 @@ export {
 } from "./services/leaderboard";
 export type { LeaderboardQuery, LeaderboardView } from "./services/leaderboard";
 export { createLeaderboardComposer } from "./commands/leaderboard";
+export type { AdminQuery } from "./commands/admin";
+export { createAdminComposer } from "./commands/admin";
