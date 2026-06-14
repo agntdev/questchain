@@ -3,6 +3,7 @@ export {
   Challenge,
   ChallengeStatus,
   RewardType,
+  Recurrence,
   DEFAULT_CHALLENGE_STATUS,
   createChallenge,
 } from "./models/challenge";
@@ -33,3 +34,14 @@ export { createSeasonComposer } from "./commands/newseason";
 export { createMyChallengesComposer } from "./commands/mychallenges";
 export type { MyChallengesQuery, MyChallengesView } from "./services/mychallenges";
 export { getMyChallengesView, formatMyChallengesMessage } from "./services/mychallenges";
+export { createNewChallengeComposer } from "./commands/newchallenge";
+export type { ChallengeCreationQuery } from "./services/challenge_creation";
+export {
+  validateTitle,
+  validateDescription,
+  validateRewardAmount,
+  validateTokenAddress,
+  validateCustomDuration,
+  formatConfirmation,
+  createDeadline,
+} from "./services/challenge_creation";
