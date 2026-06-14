@@ -17,3 +17,16 @@ export {
 } from "./services/leaderboard";
 export type { LeaderboardQuery, LeaderboardView } from "./services/leaderboard";
 export { createLeaderboardComposer } from "./commands/leaderboard";
+export {
+  GroupCompetition,
+  PrizeCurrency,
+  createCompetition,
+} from "./models/competition";
+export { Team, TeamMember, createTeam, createTeamMember } from "./models/team";
+export type { SeasonQuery } from "./services/season";
+export {
+  isValidPrizeCurrency,
+  validateNewSeasonArgs,
+  createSeasonDates,
+} from "./services/season";
+export { createSeasonComposer } from "./commands/newseason";
